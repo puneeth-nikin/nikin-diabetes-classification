@@ -1,6 +1,8 @@
 # installing required libraries libraries
 if(!require(tidyverse)) install.packages("tidyverse", repos = "http://cran.us.r-project.org")
 if(!require(caret)) install.packages("caret", repos = "http://cran.us.r-project.org")
+if(!require(rvest)) install.packages("rvest", repos = "http://cran.us.r-project.org")
+library(rvest)
 library(tidyverse)
 library(caret)
 
@@ -11,68 +13,226 @@ unzip(dl)
 rm(dl)
 diabetic_data<- read_csv('dataset_diabetes/diabetic_data.csv')
 
+
 #Summary of the dataset
 
 names(diabetic_data)
 summary(diabetic_data)
+diabetic_data%>%group_by(readmitted)%>%summarise(n=n())
 
 # Cleaning the dataset
 
-
-## check for NA
-na_check<-apply(diabetic_data, 2, function(x) any(is.na(x)))
-table(na_check)
-
 ## check for missing values
-missing_values<-diabetic_data%>%gather(x,value,encounter_id:readmitted)%>%group_by(x)%>%count(missing=(value=='?'))
+number_of_obs<-dim(diabetic_data)[1]
+diabetic_data%>%
+  gather(x,value,encounter_id:readmitted)%>%
+  filter(value=='?')%>%
+  group_by(x)%>%
+  summarise(proportion_missing=n()/number_of_obs)%>%
+  arrange(desc(proportion_missing))
+diabetic_data<-diabetic_data%>%select(-weight,-medical_specialty,-payer_code)
 
-## dropping missing rows for diag_1,diag_2,diag_3
-diabetic_data<-diabetic_data%>%filter(diag_1!='?',diag_2!='?',diag_3!='?',race!='?')
-## removing gender marked as invalid
-diabetic_data<-diabetic_data %>% filter(gender!='Unknown/Invalid')
+
+
+# repetition of patients removing multiple encounters
+diabetic_data<-
+  diabetic_data[!duplicated(diabetic_data$patient_nbr),]
+
+## checking for predictors with nzv and zero variance
+near_zero_variance <- nearZeroVar(diabetic_data)
+diabetic_data<-diabetic_data[,-near_zero_variance]
+
+
+
+
+##categorising ICD-9 codes
+url<- "https://icd.codes/icd9cm"
+h <- read_html(url)
+tab <- h %>% html_nodes("table")
+tab<-tab[[1]]
+tab <- tab %>% html_table
+icd_9table<-tab
+tab<-tab%>%
+  filter(Chapter<18)
+regex_codes<-"^(\\d{3})-(\\d{3})$"
+
+###diag_1
+temp_diabetic_data<-
+  diabetic_data%>%
+  filter(str_detect(diag_1,"^[VE\\?]")==FALSE)%>%
+  mutate(diag_1=as.numeric(diag_1))
+
+cat_list<-
+  sapply(as.vector(tab$`Code Range`),function(x){
+  between(temp_diabetic_data$diag_1,
+          as.numeric(str_match(x,regex_codes)[,2]),
+          as.numeric(str_match(x,regex_codes)[,3]))
+})
+cat_df<-as_tibble(cat_list)
+temp_diabetic_data<-cbind(temp_diabetic_data,cat_df)
+temp_diabetic_data<-
+  temp_diabetic_data%>%
+  gather(category_diag_1,value,`001-139`:`800-999`)%>%
+  filter(value==TRUE)%>%
+  select(patient_nbr,category_diag_1)
+diabetic_data<-diabetic_data%>%
+  left_join(temp_diabetic_data,by='patient_nbr')
+diabetic_data$category_diag_1[str_detect(diabetic_data$diag_1,"^V")]<-"V01-V91"
+diabetic_data$category_diag_1[str_detect(diabetic_data$diag_1,"^E")]<-"E000-E999"
+diabetic_data$category_diag_1[str_detect(diabetic_data$diag_1,"^\\?")]<-"?"
+diabetic_data$category_diag_1[str_detect(diabetic_data$diag_1,"^250")]<-"250"
+
+###diag_2
+temp_diabetic_data<-diabetic_data%>%
+  filter(str_detect(diag_2,"^[VE\\?]")==FALSE)%>%
+  mutate(diag_2=as.numeric(diag_2))
+cat_list<-sapply(as.vector(tab$`Code Range`),function(x){
+  between(temp_diabetic_data$diag_2,
+          as.numeric(str_match(x,regex_codes)[,2]),
+          as.numeric(str_match(x,regex_codes)[,3]))
+})
+cat_df<-as_tibble(cat_list)
+temp_diabetic_data<-cbind(temp_diabetic_data,cat_df)
+temp_diabetic_data<-temp_diabetic_data%>%
+  gather(category_diag_2,value,`001-139`:`800-999`)%>%
+  filter(value==TRUE)%>%
+  select(patient_nbr,category_diag_2)
+diabetic_data<-diabetic_data%>%
+  left_join(temp_diabetic_data,by='patient_nbr')
+diabetic_data$category_diag_2[str_detect(diabetic_data$diag_2,"^V")]<-"V01-V91"
+diabetic_data$category_diag_2[str_detect(diabetic_data$diag_2,"^E")]<-"E000-E999"
+diabetic_data$category_diag_2[str_detect(diabetic_data$diag_2,"^\\?")]<-"?"
+diabetic_data$category_diag_2[str_detect(diabetic_data$diag_2,"^250")]<-"250"
+
+###diag_3
+temp_diabetic_data<-diabetic_data%>%
+  filter(str_detect(diag_3,"^[VE\\?]")==FALSE)%>%
+  mutate(diag_3=as.numeric(diag_3))
+
+cat_list<-sapply(as.vector(tab$`Code Range`),function(x){
+  between(temp_diabetic_data$diag_3,
+          as.numeric(str_match(x,regex_codes)[,2]),
+          as.numeric(str_match(x,regex_codes)[,3]))
+})
+cat_df<-as_tibble(cat_list)
+temp_diabetic_data<-cbind(temp_diabetic_data,cat_df)
+temp_diabetic_data<-temp_diabetic_data%>%
+  gather(category_diag_3,value,`001-139`:`800-999`)%>%
+  filter(value==TRUE)%>%select(patient_nbr,category_diag_3)
+diabetic_data<-diabetic_data%>%left_join(temp_diabetic_data,by='patient_nbr')
+diabetic_data$category_diag_3[str_detect(diabetic_data$diag_3,"^V")]<-"V01-V91"
+diabetic_data$category_diag_3[str_detect(diabetic_data$diag_3,"^E")]<-"E000-E999"
+diabetic_data$category_diag_3[str_detect(diabetic_data$diag_3,"^\\?")]<-"?"
+diabetic_data$category_diag_3[str_detect(diabetic_data$diag_3,"^250")]<-"250"
+
+### remove diag_1, diag_2, diag_3
+diabetic_data<-diabetic_data%>%select(-c(diag_1,diag_2,diag_3))
+
+
+
+
+##removing /grouping/merging categories with sparse data
+
+### race
+diabetic_data%>%group_by(race)%>%summarise(n=n())%>%arrange(n)
+
+### gender
+diabetic_data%>%group_by(gender)%>%summarise(n=n())%>%arrange(n)
+diabetic_data<-diabetic_data %>% filter(gender %in% c("Female","Male"))
+
+### age
+diabetic_data%>%group_by(age)%>%summarise(n=n())%>%arrange(n)
+diabetic_data$age[diabetic_data$age %in% c("[0-10)","[10-20)")]<-"[0-20)"
+###admission_type_id
+diabetic_data%>%group_by(admission_type_id)%>%summarise(n=n())%>%arrange(n)
+diabetic_data$admission_type_id[diabetic_data$admission_type_id %in% c(4,7,8,6)]<-6
+
+###discharge_disposition_id and removing expired(11)
+diabetic_data%>%group_by(discharge_disposition_id)%>%summarise(n=n())%>%arrange(n)
+diabetic_data$discharge_disposition_id[diabetic_data$discharge_disposition_id %in% c(20,12,16,27,10,19,17,9,24,15,8,28,25)]<-25
+diabetic_data<-diabetic_data%>%filter(discharge_disposition_id != 11) 
+
+###admission_source_id
+diabetic_data%>%group_by(admission_source_id)%>%summarise(n=n())%>%arrange(n)
+diabetic_data$admission_source_id[diabetic_data$admission_source_id %in% c(11,13,14,25,22,10,8,9,15)]<-9
+
+###category_diag_1
+diabetic_data%>%group_by(category_diag_1)%>%summarise(n=n())%>%arrange(n)
+diabetic_data<-diabetic_data%>%filter(!category_diag_1 %in% c("E000-E999","?","740-759"))
+
+###category_diag_2
+diabetic_data%>%group_by(category_diag_2)%>%summarise(n=n())%>%arrange(n)
+diabetic_data$category_diag_2[diabetic_data$category_diag_2 == "740-759"]<-'?'
+
+###category_diag_3
+diabetic_data%>%group_by(category_diag_3)%>%summarise(n=n())%>%arrange(n)
+diabetic_data$category_diag_3[diabetic_data$category_diag_3 == "740-759"]<-'?'
+
+###A1C result
+diabetic_data%>%group_by(A1Cresult)%>%summarise(n=n())%>%arrange(n)
+
+###metformin
+diabetic_data%>%group_by(metformin)%>%summarise(n=n())%>%arrange(n) 
+
+### glipizide
+diabetic_data%>%group_by(glipizide)%>%summarise(n=n())%>%arrange(n)
+
+### glyburide
+diabetic_data%>%group_by(glyburide)%>%summarise(n=n())%>%arrange(n)
+
+###pioglitazone
+diabetic_data%>%group_by(pioglitazone)%>% summarise(n=n())%>%arrange(n)
+
+###rosiglitazone
+diabetic_data%>%group_by(rosiglitazone)%>%summarise(n=n())%>%arrange(n)
+
+###insulin
+diabetic_data%>%group_by(insulin)%>%summarise(n=n())%>%arrange(n)
+
+###change
+diabetic_data%>%group_by(change)%>%summarise(n=n())%>%arrange(n)
+
+###diabetesMed
+diabetic_data%>%group_by(diabetesMed)%>%summarise(n=n())%>%arrange(n)
+
+##Scaling the numeric predictors
+
+diabetic_data<- diabetic_data%>%
+  mutate(
+    time_in_hospital=(time_in_hospital-mean(time_in_hospital))/sd(time_in_hospital),
+    num_lab_procedures=(num_lab_procedures-mean(num_lab_procedures))/sd(num_lab_procedures),
+    num_procedures=(num_procedures-mean(num_procedures))/sd(num_procedures),
+    num_medications=(num_medications-mean(num_medications))/sd(num_medications),
+    number_outpatient=(number_outpatient-mean(number_outpatient))/sd(number_outpatient),
+    number_emergency=(number_emergency-mean(number_emergency))/sd(number_emergency),
+    number_inpatient=(number_inpatient-mean(number_inpatient))/sd(number_inpatient),
+    number_diagnoses=(number_diagnoses-mean(number_diagnoses))/sd(number_diagnoses)
+    )
 ## converting categorical features to factors
 diabetic_data<-diabetic_data%>%
   mutate(race=as.factor(race),
          gender=as.factor(gender),
          age=as.factor(age),
-         weight=as.factor(weight),
          admission_type_id=as.factor(admission_type_id),
          discharge_disposition_id=as.factor(discharge_disposition_id),
          admission_source_id=as.factor(admission_source_id),
-         payer_code=as.factor(payer_code),
-         medical_specialty=as.factor(medical_specialty),
-         diag_1=as.factor(diag_1),
-         diag_2=as.factor(diag_2),
-         diag_3=as.factor(diag_3),
-         max_glu_serum=as.factor(max_glu_serum),
+         category_diag_1=as.factor(category_diag_1),
+         category_diag_2=as.factor(category_diag_2),
+         category_diag_3=as.factor(category_diag_3),
          A1Cresult=as.factor(A1Cresult),
          metformin=as.factor(metformin),
-         repaglinide=as.factor(repaglinide),
-         nateglinide=as.factor(nateglinide),
-         chlorpropamide=as.factor(chlorpropamide),
-         glimepiride=as.factor(glimepiride),
-         acetohexamide=as.factor(acetohexamide),
          glipizide=as.factor(glipizide),
          glyburide=as.factor(glyburide),
-         tolbutamide=as.factor(tolbutamide),
          pioglitazone=as.factor(pioglitazone),
          rosiglitazone=as.factor(rosiglitazone),
-         acarbose=as.factor(acarbose),
-         miglitol=as.factor(miglitol),
-         troglitazone=as.factor(troglitazone),
-         tolazamide=as.factor(tolazamide),
-         examide=as.factor(examide),
-         citoglipton=as.factor(citoglipton),
          insulin=as.factor(insulin),
-         `glyburide-metformin`=as.factor(`glyburide-metformin`),
-         `glipizide-metformin`=as.factor(`glipizide-metformin`),
-         `glimepiride-pioglitazone`=as.factor(`glimepiride-pioglitazone`),
-         `metformin-rosiglitazone`=as.factor(`metformin-rosiglitazone`),
-         `metformin-pioglitazone`=as.factor(`metformin-pioglitazone`),
          change=as.factor(change),
          diabetesMed=as.factor(diabetesMed),
          readmitted=as.factor(readmitted))
 
+## check for NA
+na_check<-apply(diabetic_data, 2, function(x) any(is.na(x)))
+table(na_check)
 
 # Split data for validation, 10% of diabetic_data
 set.seed(1, sample.kind="Rounding")
@@ -82,7 +242,8 @@ validation <- diabetic_data[validate_index,]
 diabetes <- diabetic_data[-validate_index,]
 
 
-# analysis of features
+
+# Analysis of features
 
 proportion_analysis<- function(feature){
   diabetes %>%group_by(feature=diabetes[[feature]])%>%
@@ -102,51 +263,34 @@ plot_proportion_analysis<- function(analysis){
 
 ## analysis of readmitted with race
 a_race<- proportion_analysis("race")
-plot_proportion_analysis(a_race)
+plot_proportion_analysis(a_race)+ggtitle("Race")
 
 ## analysis of readmitted with gender
 a_gender<- proportion_analysis("gender")
-plot_proportion_analysis(a_gender)
+plot_proportion_analysis(a_gender)+ggtitle("Gender")
 
 ## analysis of readmitted with age
 a_age <- proportion_analysis("age")
-plot_proportion_analysis(a_age)
-
-#analysis of readmitted with weight
-a_weight<- proportion_analysis('weight')
-plot_proportion_analysis(a_weight)
+plot_proportion_analysis(a_age)+ggtitle("Age")
 
 ## analysis of readmitted with admission type 
 a_adm_type<-proportion_analysis('admission_type_id')
-plot_proportion_analysis(a_adm_type)
+plot_proportion_analysis(a_adm_type)+ggtitle("Admission Type")
 
-##analysis of readmitted with discharge_disposition
+##analysis of readmitted with discharge disposition
 a_discharge_disp<-proportion_analysis('discharge_disposition_id')
-plot_proportion_analysis(a_discharge_disp)
+plot_proportion_analysis(a_discharge_disp)+ggtitle("Discharge Disposition")
 
 ## analysis of readmitted with admission source
 a_adm_source<- proportion_analysis('admission_source_id')
-plot_proportion_analysis(a_adm_source)
+plot_proportion_analysis(a_adm_source)+ggtitle("Admission Source")
 
 ##analysis of readmitted and time spent in hospital
 diabetes%>%
   ggplot(aes(x=time_in_hospital))+
   geom_histogram()+
-  facet_wrap(~readmitted,ncol = 1)
-
-## analysis of readmitted payer_code 
-a_pay<- proportion_analysis('payer_code')
-plot_proportion_analysis(a_pay)
-
-## analysis of readmitted with medical_speciality
-a_med_spec<- proportion_analysis('medical_specialty')
-a_med_spec%>%
-  select(-n_patients)%>%
-  gather(n_readmitted,proportions,single_visit:lesser_30_visits)%>%
-  ggplot(aes(x=feature,y=proportions,color=n_readmitted))+
-  geom_point()+
-  theme(axis.text.x = element_text(angle = 90,hjust = 1))
-
+  facet_wrap(~readmitted,ncol = 1)+
+  ggtitle("Time Spent in Hospital")
 
 ## analysis of readmitted with number of lab procedures,number of procedures,
 ##number of medications, number of outpatient, number of emergency and number of inpatient
@@ -160,36 +304,35 @@ diabetes%>%
          number_inpatient)%>%
   gather(key,value,num_lab_procedures:number_inpatient)%>%
   ggplot(aes(value))+
-  geom_histogram(stat = 'proportion')+
+  geom_histogram()+
   scale_y_continuous(trans = 'log2')+
-  facet_wrap(key~readmitted,ncol=3)
+  facet_wrap(key~readmitted,ncol=3)+
+  ggtitle("Procedures, Medications,Outpatient, Emergency, Inpatient")
 
-##analysis of readmitted with diag_1,diag_2, diag_3
-a_diag<-diabetes%>%
-  select(readmitted,diag_1,diag_2,diag_3)%>%
-  gather(key,value,diag_1:diag_3)
-levels(factor(a_diag$value))
+##analysis of readmitted with category_diag_1
+a_diag<-proportion_analysis("category_diag_1")
+plot_proportion_analysis(a_diag)+
+  ggtitle("Category Diagnosis")
 
 ## analysis of readmitted with number of diagnosis
 diabetes%>% 
   ggplot(aes(x=number_diagnoses))+
   geom_histogram()+
-  facet_wrap(~readmitted,ncol = 1)
+  facet_wrap(~readmitted,ncol = 1)+
+  ggtitle("Number of Diagnosis")
 
-## analysis of readmitted with tests
 
-## analysis of readmitted with max_glu_serum
-a_m_glu_serum <-proportion_analysis('max_glu_serum')
-plot_proportion_analysis(a_m_glu_serum)
+
 
 ## analysis of readmitted with A1Cresult
 a_a1c_result<-proportion_analysis('A1Cresult')
-plot_proportion_analysis(a_a1c_result)
+plot_proportion_analysis(a_a1c_result)+
+  ggtitle("A1C Result")
 
-## tests with 4 levels namely Down,Up,No, Steady
+## tests with metformin,glipizide,glyburide,pioglitazone,rosiglitazone & insulin
 
 diabetes%>%
-  select(c(25:47,50))%>%
+  select(metformin,glipizide,glyburide,pioglitazone,rosiglitazone,insulin,readmitted)%>%
   gather(test,result,-readmitted)%>%
   group_by(test,result)%>%
   summarise(single_visit=mean(readmitted=='NO'),
@@ -199,16 +342,19 @@ diabetes%>%
   ggplot(aes(x=visit,y=value,color=result))+
   geom_jitter()+
   scale_x_discrete(label=abbreviate)+
-  facet_wrap(~test,ncol =5)
+  facet_wrap(~test,ncol =3)+
+  ggtitle("metformin,glipizide,glyburide,pioglitazone,\n rosiglitazone & insulin")
 
 
 ## analysis of readmitted with change
 a_change<-proportion_analysis('change')
-plot_proportion_analysis(a_change)
+plot_proportion_analysis(a_change)+
+  ggtitle("Change")
 
 ##analysis of readmitted with diabetes medicine
 a_diabetes_med<- proportion_analysis('diabetesMed')
-plot_proportion_analysis(a_diabetes_med)
+plot_proportion_analysis(a_diabetes_med)+
+  ggtitle("Diabetes Medicine")
 
 # Modeling
 
@@ -218,5 +364,25 @@ test_index<- createDataPartition(diabetes$readmitted,times=1,p=0.3,list=FALSE)
 test_set <- diabetes[test_index,]
 train_set<- diabetes[-test_index,]
 
-fit_lda<-train_set%>%train(readmitted ~ race+gender+age,method='lda',data=.)
+##Linear Discriminant Analysis
+fit_lda<-train_set%>%train(readmitted ~ . -encounter_id -patient_nbr,
+        method='lda',
+        data=.)
+predictions_lda<-predict(fit_lda,newdata = test_set,type = 'raw')
+confusion_matrix_lda<-confusionMatrix(predictions_lda,reference = test_set$readmitted)
+
+##Quadratic Discriminant Analysis
+fit_qda<-train_set%>%train(readmitted ~ . -encounter_id -patient_nbr,
+                           method='qda',
+                           data=.)
+predictions_qda<-predict(fit_qda,newdata = test_set,type = 'raw')
+confusion_matrix_qda<-confusionMatrix(predictions_qda,reference = test_set$readmitted)
+
+##Random Forest
+fit_rf<-train_set%>%train(readmitted ~ . -encounter_id -patient_nbr,
+                           method='Rborist',
+                           data=.)
+predictions_rf<-predict(fit_rf,newdata = test_set,type = 'raw')
+confusion_matrix_rf<-confusionMatrix(predictions_rf,reference = test_set$readmitted)
+
 
