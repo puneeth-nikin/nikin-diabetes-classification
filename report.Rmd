@@ -17,7 +17,8 @@ In this study, analysis of data from 130 Hospitals accross the US for 10 years (
 
 
 ## About the Dataset
-
+The dataset is part of the UCI MAchine Learning Repository and named "
+Diabetes 130-US hospitals for years 1999-2008 Data Set".
 Here is a [***link***](https://archive.ics.uci.edu/ml/datasets/diabetes+130-us+hospitals+for+years+1999-2008) to that dataset.
 The dataset is first imported,
 
@@ -235,6 +236,7 @@ Some features in our dataset do not have sufficient variability. For e.g examide
 ```{r cleaning-nzv,echo=FALSE, message=FALSE, warning=FALSE}
 ## checking for predictors with nzv and zero variance
 if(!require(caret)) install.packages("caret", repos = "http://cran.us.r-project.org")
+library(caret)
 nearZeroVar(diabetic_data,saveMetrics = TRUE)%>%
   as_tibble(rownames = "feature")%>%
   filter(zeroVar==TRUE | nzv == TRUE) %>%
@@ -854,3 +856,7 @@ predictions_qda<-predict(fit_qda,newdata = validation,type = 'raw')
 confusionMatrix(predictions_qda,reference = validation$readmitted)
 ```
 
+#### Conclusion
+In conclusion, it is apparent that with real world data it is crucial to clean and preprocess the dataset prior to fitting the model. It is also clear that it is important to identify only those features which have predictive power before fitting the model else the computation can be expensive and at the same time not doing so can affect the results as well.
+Among the models KNN has the highest accuracy. However this is misleading as predicting every patient is not going to be readmitted alone will give us such a high accuracy,without fitting a model.This can be attributed to the fact that class "NO", which corresponds to not readmitted, has high prevalence. Therefore we will use sensitivity as a metric to identify the best performing model. In the case of LDA and QDA, QDA has a higher sensitivity to  classes "<30" and ">30", which in this case are the important classes. This could be the case as LDA assumes that the observations have a normal distribution and have a common covariance matrix for each class. Also QDA has a quadratic decision boundary. Therefore QDA was used to fit the final model.
+Future work involves improving sensitivity towards the crucial classes.
