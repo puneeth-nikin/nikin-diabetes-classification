@@ -1,0 +1,856 @@
+---
+title: "Predicting Hospital Readmittance among Diabetes Patients"
+author: "Puneeth Nikin Krishnan"
+date: "10/05/2020"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Introduction
+
+Diabetes is a metabolic disease that leads to high blood sugar in Patients. As of 2017 425 million people suffered from this disease. Hospital Readmission is a mojor concern among patients whose diabetes is poorly controlled. This leads to higher hospital bills among these patients as well as higher morbidity and mortality.Consequently identifying patients with high probability of readmittance will help hospitals to curate their treatment accordingly.
+
+In this study, analysis of data from 130 Hospitals accross the US for 10 years (1999-2008) is conducted. Based on this data a model will be developed to predict whether a patient will be readmitted within 30 days, after 30 days or never. This is a classification problem. Three models will  be built, namely Linear Discriminant Analysis Quadratic Discriminant Analysis and K Nearest Neighbors(KNN) and the best performing model among them will be identified. 
+
+
+## About the Dataset
+
+Here is a [***link***](https://archive.ics.uci.edu/ml/datasets/diabetes+130-us+hospitals+for+years+1999-2008) to that dataset.
+The dataset is first imported,
+
+```{r importing-diabetes-data,echo=FALSE, message=FALSE, warning=FALSE}
+if(!require(tidyverse)) 
+  install.packages("tidyverse", 
+                   repos = "http://cran.us.r-project.org")
+if(!require(kableExtra)) 
+  install.packages("kableExtra", 
+                   repos = "http://cran.us.r-project.org")
+library(tidyverse)
+library(kableExtra)
+dl <- tempfile()
+download.file(
+  "https://archive.ics.uci.edu/ml/machine-learning-databases/00296/dataset_diabetes.zip",
+  dl)
+unzip(dl)
+rm(dl)
+
+# diabetic data
+diabetic_data<- read_csv('dataset_diabetes/diabetic_data.csv')
+
+#description of some features
+dataset_description<-read_csv('dataset_diabetes/IDs_mapping.csv')
+admission_type_description<-dataset_description[1:8,]
+discharge_disposition_description<-dataset_description[11:40,]
+names(discharge_disposition_description)<-c('discharge_disposition_id','decription')
+admission_source_description<-dataset_description[43:67,]
+names(admission_source_description)<-c('admission_source_id','description')
+```
+
+The dataset comprises of records of patients. Each record of a patient comprises of 50 data points. 
+
+```{r dataset-description-names, echo=FALSE,warning=FALSE,message=FALSE}
+names_df<-matrix(names(diabetic_data),ncol = 5)
+names_df%>%knitr::kable(caption = "Names of Dataset Columns")%>%
+  kable_styling(latex_options = "scale_down")%>%
+  kable_styling(latex_options = "hold_position")
+```
+
+#### Demographics and General Patient Information
+
+The patients Demographic information such as Age, Sex and Gender are included, along with information such as encounter id, patient number and Weight. 
+
+#### Admission Type ID
+
+admission_type_id - represents the admission type and description of the same is as follows. 
+
+```{r dataset-description-admission-type-id, echo=FALSE,warning=FALSE,message=FALSE}
+
+admission_type_description%>% 
+  knitr::kable(caption = "Admission Type ID Description",
+               align = 'cr')%>%
+  kable_styling(latex_options = "hold_position")
+```
+
+#### Discharge Disposition ID
+
+discharge_disposition_id - The discharge disposition refers to where the patients were discharged to,e.g home,emergency etc. Here is a description of all the id's
+```{r dataset-description-admission-source-description, echo=FALSE,warning=FALSE,message=FALSE}
+discharge_disposition_description%>%
+  knitr::kable(caption = "Discharge Disposition ID")%>%
+  kable_styling(latex_options = "scale_down")%>%
+  kable_styling(latex_options = "hold_position")
+```
+
+
+
+#### Admission Source ID
+
+admission_source_id - The admission source refers to the the source of the patient,e.g referals, transfer etc.Here is a description of all the id's.
+
+```{r dataset-description-discharge-disposition-description, echo=FALSE,warning=FALSE,message=FALSE}
+admission_source_description%>%
+  knitr::kable(caption = "Admission Source ID")%>%
+  kable_styling(latex_options = "hold_position")
+```
+
+#### Time  in Hospital
+
+time_in_hospital refers to the number of  days from admission to discharge.
+
+#### Payer Code
+
+payer_code corresponds to mode of payment e.g self pay, blue cross,medicare etc. 
+
+#### Medical Speciliality
+medical_speciality - The type of physician who is admitting the patient
+
+#### Numerical Features
+
+num_lab_procedures - Number of lab tests performed.   
+number_procedures - Number  of procedures other than lab tests.   
+num_medications - Number of Medications prescribed during visit.   
+num_outpatient - Number of outpatient visits.   
+number_emergency - Number of emergency visits in the  preceding year.   
+number_inpatient - Number of inpatient visits in the preceding year.  
+number_diagnosis - number of diagnosis in the system.   
+
+
+#### Diagnosis
+
+diag_1 - Primary diagnosis   
+diag_2 - Secondary diagnosis   
+diag_3 - Additional Secondary diagnosis if any.   
+
+The diagnosis are coded as ICD - 9 codes.  A table of classification for the ICD-9 codes can be web-scraped from the website https://icd.codes/icd9cm . The library rvest is used for this purpose.
+
+
+```{r dataset-description-diagnosis, echo=FALSE,warning=FALSE,message=FALSE}
+if(!require(rvest)) install.packages("rvest", repos = "http://cran.us.r-project.org")
+library(rvest)
+url<- "https://icd.codes/icd9cm"
+h <- read_html(url)
+tab <- h %>% html_nodes("table")
+tab<-tab[[1]]
+tab <- tab %>% html_table
+icd_9table<-tab
+icd_9table%>%
+  knitr::kable(caption = "ICD9  Codes")%>%
+  kable_styling(latex_options = "scale_down")
+
+```
+
+#### Glucose Serum Test
+max_glu_serum - refers to Glucose Serum test results   
+values-    
+“>200” - greater than 200 but less than 300   
+“>300” - greater than 300   
+“normal,” - less than 200   
+“none”- test not conducted   
+
+#### A1Cresult
+
+A1Cresult - a1c test result reflects average blood sugar levels over 3 months. also refered to as hemoglobin A1C test.   
+Values - 
+">8" -  greater than 8%   
+">7" - greater than 7% less than 8%   
+"normal" - less than 7%   
+"none" - test not conducted   
+
+#### Medications
+
+24 features represent type of medications and values denote change in levels during encounter.   
+
+features- metformin, repaglinide, nateglinide, chlorpropamide, glimepiride, acetohexamide, glipizide, glyburide, tolbutamide, pioglitazone, rosiglitazone, acarbose, miglitol, troglitazone, tolazamide, examide, sitagliptin, insulin, glyburide-metformin, glipizide-metformin, glimepiride-pioglitazone, metformin-rosiglitazone, and metformin-pioglitazone   
+
+values -    
+"Up" - dosage increase   
+"Down" - dosage decreased   
+"Steady" - dosage maintained   
+"No" - Not prescribed   
+
+#### Change
+change - change in medication   
+Values-   
+"Ch" - Change   
+"No" - No Change   
+
+#### Diabetes Medications
+
+diabetesMed- Patient prescribed diabetes Medicine   
+Values-   
+"Yes"- medications prescribed   
+"No" - medications not prescribed   
+
+#### readmitted
+The classification to be predicted   
+Values-   
+"No" - Not readmitted   
+"<30"- Readmitted within 30 days   
+">30"- Readmitted after 30 days   
+
+## Steps in Modeling
+
+1) Cleaning and Preprocessing the dataset - This step involves identifying missing values, converting characters to factors where approprite, scaling and centering numerical features,grouping or removing levels in features that contain sparse data and identifying features with zero variablilty or near zero variability.  
+  
+2) Split the Dataset- We split the dataset into two. One set is used for validation in the end and is assumed to be unseen. n 
+  
+3) Analysing the features- Identify relationship between features and predicted value.  
+  
+4)Modelling - Build three models namely K nearest Neighbors, Linear Discriminant Analysis and Quadratic Discriminant Analysis and identify best performing model.
+
+# Cleaning and Preprocessing the Dataset
+
+The diabetic_data dataframe cannot be directly used for modelling as most of the data needs to be reorganised. This is because some features do not have enough data while others are not converted to factor.  
+  
+#### Missing Values
+```{r cleaning-missing-values,echo=FALSE, message=FALSE, warning=FALSE}
+## check for missing values
+number_of_obs<-dim(diabetic_data)[1]
+diabetic_data%>%
+  gather(x,value,encounter_id:readmitted)%>%
+  filter(value=='?')%>%
+  group_by(x)%>%
+  summarise(proportion_missing=n()/number_of_obs)%>%
+  arrange(desc(proportion_missing))%>%knitr::kable(caption = "Proportion of Missing Values")%>%
+  kable_styling(latex_options = "hold_position")
+diabetic_data<-diabetic_data%>%select(-weight,-medical_specialty,-payer_code)
+
+```
+
+We notice that the feature weigh has 96.8% of its data missing, medical_speciality has 49% of data missing and payer_code has 39% of data missing. We drop these columns/features. 
+
+#### repetition of patient encounters
+For some patientxs there are multiple records and this can potentially be confusing. Therefore we only keep one record per patient.
+
+```{r cleaning-patuent repetition,echo=FALSE, message=FALSE, warning=FALSE}
+# repetition of patients removing multiple encounters
+diabetic_data<-
+  diabetic_data[!duplicated(diabetic_data$patient_nbr),]
+```
+#### Zero Variance/ Near zero Variance
+Some features in our dataset do not have sufficient variability. For e.g examide has only one level i.e 'no' consequently it has no predictive power. Similarly there could be features whose variability is significantly low. The Caret package provides with nearZeroVar() function that can be used to identify and remove these features.
+```{r cleaning-nzv,echo=FALSE, message=FALSE, warning=FALSE}
+## checking for predictors with nzv and zero variance
+if(!require(caret)) install.packages("caret", repos = "http://cran.us.r-project.org")
+nearZeroVar(diabetic_data,saveMetrics = TRUE)%>%
+  as_tibble(rownames = "feature")%>%
+  filter(zeroVar==TRUE | nzv == TRUE) %>%
+  knitr::kable(caption = "Features with zero Variability or \n near zero Variability")%>%
+  kable_styling(latex_options = "hold_position")
+near_zero_variance <- nearZeroVar(diabetic_data)
+diabetic_data<-diabetic_data[,-near_zero_variance]
+```
+
+#### classifying diagnosis by ICD9 codes
+
+One other significant problem is some features like diag_1, diag_2 and diag_3 have way to many levels when converted to factors and this involves costly computation. To avoid this we reduce number of levels by classifying to ICD9 classifications. We also seperate codes pertaining to 250.xx as they are specifically related to diabetes.
+
+```{r cleaning-diagnosis,echo=FALSE, message=FALSE, warning=FALSE}
+
+tab<-tab%>%
+  filter(Chapter<18)
+regex_codes<-"^(\\d{3})-(\\d{3})$"
+
+###diag_1
+temp_diabetic_data<-
+  diabetic_data%>%
+  filter(str_detect(diag_1,"^[VE\\?]")==FALSE)%>%
+  mutate(diag_1=as.numeric(diag_1))
+
+cat_list<-
+  sapply(as.vector(tab$`Code Range`),function(x){
+  between(temp_diabetic_data$diag_1,
+          as.numeric(str_match(x,regex_codes)[,2]),
+          as.numeric(str_match(x,regex_codes)[,3]))
+})
+cat_df<-as_tibble(cat_list)
+temp_diabetic_data<-cbind(temp_diabetic_data,cat_df)
+temp_diabetic_data<-
+  temp_diabetic_data%>%
+  gather(category_diag_1,value,`001-139`:`800-999`)%>%
+  filter(value==TRUE)%>%
+  select(patient_nbr,category_diag_1)
+diabetic_data<-diabetic_data%>%
+  left_join(temp_diabetic_data,by='patient_nbr')
+diabetic_data$category_diag_1[str_detect(diabetic_data$diag_1,"^V")]<-"V01-V91"
+diabetic_data$category_diag_1[str_detect(diabetic_data$diag_1,"^E")]<-"E000-E999"
+diabetic_data$category_diag_1[str_detect(diabetic_data$diag_1,"^\\?")]<-"?"
+diabetic_data$category_diag_1[str_detect(diabetic_data$diag_1,"^250")]<-"250"
+
+###diag_2
+temp_diabetic_data<-diabetic_data%>%
+  filter(str_detect(diag_2,"^[VE\\?]")==FALSE)%>%
+  mutate(diag_2=as.numeric(diag_2))
+cat_list<-sapply(as.vector(tab$`Code Range`),function(x){
+  between(temp_diabetic_data$diag_2,
+          as.numeric(str_match(x,regex_codes)[,2]),
+          as.numeric(str_match(x,regex_codes)[,3]))
+})
+cat_df<-as_tibble(cat_list)
+temp_diabetic_data<-cbind(temp_diabetic_data,cat_df)
+temp_diabetic_data<-temp_diabetic_data%>%
+  gather(category_diag_2,value,`001-139`:`800-999`)%>%
+  filter(value==TRUE)%>%
+  select(patient_nbr,category_diag_2)
+diabetic_data<-diabetic_data%>%
+  left_join(temp_diabetic_data,by='patient_nbr')
+diabetic_data$category_diag_2[str_detect(diabetic_data$diag_2,"^V")]<-"V01-V91"
+diabetic_data$category_diag_2[str_detect(diabetic_data$diag_2,"^E")]<-"E000-E999"
+diabetic_data$category_diag_2[str_detect(diabetic_data$diag_2,"^\\?")]<-"?"
+diabetic_data$category_diag_2[str_detect(diabetic_data$diag_2,"^250")]<-"250"
+
+###diag_3
+temp_diabetic_data<-diabetic_data%>%
+  filter(str_detect(diag_3,"^[VE\\?]")==FALSE)%>%
+  mutate(diag_3=as.numeric(diag_3))
+
+cat_list<-sapply(as.vector(tab$`Code Range`),function(x){
+  between(temp_diabetic_data$diag_3,
+          as.numeric(str_match(x,regex_codes)[,2]),
+          as.numeric(str_match(x,regex_codes)[,3]))
+})
+cat_df<-as_tibble(cat_list)
+temp_diabetic_data<-cbind(temp_diabetic_data,cat_df)
+temp_diabetic_data<-temp_diabetic_data%>%
+  gather(category_diag_3,value,`001-139`:`800-999`)%>%
+  filter(value==TRUE)%>%select(patient_nbr,category_diag_3)
+diabetic_data<-diabetic_data%>%left_join(temp_diabetic_data,by='patient_nbr')
+diabetic_data$category_diag_3[str_detect(diabetic_data$diag_3,"^V")]<-"V01-V91"
+diabetic_data$category_diag_3[str_detect(diabetic_data$diag_3,"^E")]<-"E000-E999"
+diabetic_data$category_diag_3[str_detect(diabetic_data$diag_3,"^\\?")]<-"?"
+diabetic_data$category_diag_3[str_detect(diabetic_data$diag_3,"^250")]<-"250"
+
+### remove diag_1, diag_2, diag_3
+diabetic_data<-diabetic_data%>%select(-c(diag_1,diag_2,diag_3))
+```
+
+#### Grouping/Removing Sparse data
+
+We identify features which have sparse data in their levels and combine them with other levels or remove them. This is done to avoid  rank deficiency errors while modeling. 
+
+Race -
+```{r cleaning-race,echo=FALSE, message=FALSE, warning=FALSE}
+### race
+diabetic_data%>%
+  group_by(race)%>%
+  summarise(n=n())%>%
+  arrange(n)%>%
+  knitr::kable(caption="level count race")%>%
+  kable_styling(latex_options = "hold_position")
+```
+Race has sufficient data in each level.  
+  
+Gender-  
+```{r cleaning-gender,echo=FALSE, message=FALSE, warning=FALSE}
+### gender
+diabetic_data%>%
+  group_by(gender)%>%
+  summarise(n=n())%>%
+  arrange(n)%>%
+  knitr::kable(caption = "level count Gender")%>%
+  kable_styling(latex_options = "hold_position")
+diabetic_data<-diabetic_data %>% filter(gender %in% c("Female","Male"))
+```
+
+Gender has a  level "Unknown/Invalid" with only three data points we remove this level.  
+  
+Age-  
+  
+```{r cleaning-age,echo=FALSE, message=FALSE, warning=FALSE}
+### age
+diabetic_data%>%
+  group_by(age)%>%
+  summarise(n=n())%>%
+  arrange(n)%>%
+  knitr::kable(caption= "level count Age")%>%
+  kable_styling(latex_options = "hold_position")
+diabetic_data$age[diabetic_data$age %in% c("[0-10)","[10-20)")]<-"[0-20)"
+
+```
+  
+The levels [0-10) and [10-20) can be merged to [0-20) as the data is sparse in level [0-10).  
+  
+Admission Type ID -  
+  
+```{r cleaning-admission-type,echo=FALSE, message=FALSE, warning=FALSE}
+###admission_type_id
+diabetic_data%>%group_by(admission_type_id)%>%
+  summarise(n=n())%>%
+  arrange(n)%>%
+  knitr::kable(caption="level count Admission Type")%>%
+  kable_styling(latex_options = 'hold_position')
+diabetic_data$admission_type_id[diabetic_data$admission_type_id %in% c(4,7,8)]<-8
+```
+  
+The levels 4,7 and 8 are sparse and therefore merged with level 6.  
+  
+
+Discharge Disposition ID -  
+  
+```{r cleaning-discharge-disposition,echo=FALSE, message=FALSE, warning=FALSE}
+###discharge_disposition_id and removing expired(11)
+diabetic_data%>%
+  group_by(discharge_disposition_id)%>%
+  summarise(n=n())%>%
+  arrange(n)%>%
+  knitr::kable(caption="level count Discharge disposition ID")%>%
+  kable_styling(latex_options = 'hold_position')
+diabetic_data$discharge_disposition_id[diabetic_data$discharge_disposition_id %in% c(20,12,16,27,10,19,17,9,24,15,8,28,25)]<-25
+diabetic_data<-diabetic_data%>%filter(discharge_disposition_id != 11) 
+```
+  
+The IDs 20,12,16,27,10,19,17,9,24,15,8 and 28 have sparse data and needs to be handled. We therefore merge it with level 25. Level 11 correspods to people who died. We remove this level.  
+  
+  
+Admission Source ID-
+
+```{r cleaning-admission-source,echo=FALSE,message=FALSE,warning=FALSE}
+diabetic_data%>%
+  group_by(admission_source_id)%>%
+  summarise(n=n())%>%
+  arrange(n)%>%
+  knitr::kable(caption="level count Admission Source")%>%
+  kable_styling(latex_options = 'hold_position')
+diabetic_data<-diabetic_data%>%filter(!admission_source_id %in% c(11,13,14,25,10,22,8))
+```
+
+\pagebreak
+  
+Diagnosis Categories- 
+  
+```{r cleaning-diagnosis-sparse, echo=FALSE, message=FALSE, warning=FALSE}
+###category_diag_1
+d_1<-diabetic_data%>%
+  group_by(category_diag_1)%>%
+  summarise(n=n())%>%
+  arrange(n)
+d_2<-diabetic_data%>%
+  group_by(category_diag_2)%>%
+  summarise(n=n())%>%
+  arrange(n)
+d_3<-diabetic_data%>%
+  group_by(category_diag_3)%>%
+  summarise(n=n())%>%
+  arrange(n)
+diabetic_data<-diabetic_data%>%filter(!category_diag_1 %in% c("E000-E999","?","740-759"))
+diabetic_data$category_diag_2[diabetic_data$category_diag_2 == "740-759"]<-'?'
+diabetic_data$category_diag_3[diabetic_data$category_diag_3 == "740-759"]<-'?'
+knitr::kable(
+  list(
+    d_1,
+    d_2,
+    d_3),
+  caption = "level count diagnosis",booktabs = TRUE, valign = 't')%>%
+  kable_styling(latex_options = 'hold_position')
+```
+  
+For category_diag_1 we notice that "E000-E999","?" and "740-759" are sparse. we remove them. We perform a similar exercise on category_diag_2 and category_diag_3. 
+  
+#### Centering and Scaling the Numerical Predictors
+
+The numerical predictors are standardized.This is done so that all the numerical precictors have a mean zero and can be compared easily with other predictors which have different units. To standardise the data we subtract the mean and divide by the standard deviation.
+
+```{r cleaning-centering-scaling, echo=FALSE, message=FALSE, warning=FALSE}
+##Centering and Scaling the numeric predictors
+
+diabetic_data<- diabetic_data%>%
+  mutate(
+    time_in_hospital=(time_in_hospital-mean(time_in_hospital))/sd(time_in_hospital),
+    num_lab_procedures=(num_lab_procedures-mean(num_lab_procedures))/sd(num_lab_procedures),
+    num_procedures=(num_procedures-mean(num_procedures))/sd(num_procedures),
+    num_medications=(num_medications-mean(num_medications))/sd(num_medications),
+    number_outpatient=(number_outpatient-mean(number_outpatient))/sd(number_outpatient),
+    number_emergency=(number_emergency-mean(number_emergency))/sd(number_emergency),
+    number_inpatient=(number_inpatient-mean(number_inpatient))/sd(number_inpatient),
+    number_diagnoses=(number_diagnoses-mean(number_diagnoses))/sd(number_diagnoses)
+    )
+```
+
+#### factorising the categorical data
+
+All the categorical data are mentioned as characters.However,  since they are categorical data they need to be converted to factors.
+```{r cleaning-factorising,echo=FALSE, message=FALSE, warning=FALSE}
+## converting categorical features to factors
+diabetic_data<-diabetic_data%>%
+  mutate(race=as.factor(race),
+         gender=as.factor(gender),
+         age=as.factor(age),
+         admission_type_id=as.factor(admission_type_id),
+         discharge_disposition_id=as.factor(discharge_disposition_id),
+         admission_source_id=as.factor(admission_source_id),
+         category_diag_1=as.factor(category_diag_1),
+         category_diag_2=as.factor(category_diag_2),
+         category_diag_3=as.factor(category_diag_3),
+         A1Cresult=as.factor(A1Cresult),
+         metformin=as.factor(metformin),
+         glipizide=as.factor(glipizide),
+         glyburide=as.factor(glyburide),
+         pioglitazone=as.factor(pioglitazone),
+         rosiglitazone=as.factor(rosiglitazone),
+         insulin=as.factor(insulin),
+         change=as.factor(change),
+         diabetesMed=as.factor(diabetesMed),
+         readmitted=as.factor(readmitted))
+
+```
+
+# Split the Dataset
+The dataset is split into two. One part is the validation data which is 10% of the total dataset. This will be used in the end to validate our model.The remaining 90% data will be used to build the model.
+```{r split-dataset,echo=FALSE, message=FALSE, warning=FALSE}
+# Split data for validation, 10% of diabetic_data
+set.seed(1, sample.kind="Rounding")
+#### if using R 3.5 or earlier, use `set.seed(1)` instead
+validate_index <- createDataPartition(y = diabetic_data$readmitted,times=1,p=0.1,list=FALSE)
+validation <- diabetic_data[validate_index,]
+diabetes <- diabetic_data[-validate_index,]
+```
+  
+\pagebreak
+# Analysing the data
+
+```{r function-analysis,echo=FALSE, message=FALSE, warning=FALSE}
+proportion_analysis<- function(feature){
+  diabetes %>%group_by(feature=diabetes[[feature]])%>%
+    summarise(n_patients=n(),
+              single_visit=mean(readmitted=='NO'),
+              greater_30_visits=mean(readmitted=='>30'),
+              lesser_30_visits=mean(readmitted=='<30'))
+}
+plot_proportion_analysis<- function(analysis){
+  analysis%>%
+    select(-n_patients)%>%
+    gather(n_readmitted,proportions,single_visit:lesser_30_visits)%>%
+    ggplot(aes(x=n_readmitted,y=proportions,color=feature))+
+    geom_jitter()+
+    scale_x_discrete(label=abbreviate)
+}
+if(!require(gridExtra)) 
+  install.packages("gridExtra", 
+                   repos = "http://cran.us.r-project.org")
+library(gridExtra)
+```
+
+#### Analysis of Readmitted with Race,Gender  and Age  
+
+  
+```{r analysis-race-age-gender,echo=FALSE, message=FALSE, warning=FALSE}
+a_race<- proportion_analysis("race")
+p1<-plot_proportion_analysis(a_race)+ggtitle("Race")+
+  theme(legend.text = element_text(angle = 45,size=6))
+a_gender<- proportion_analysis("gender")
+p2<-plot_proportion_analysis(a_gender)+ggtitle("Gender")+
+  theme(legend.text = element_text(angle = 45,size=6))
+a_age <- proportion_analysis("age")
+p3<-plot_proportion_analysis(a_age)+ggtitle("Age")+
+  theme(legend.text = element_text(angle = 45,size=6))
+grid.arrange(p2,p1,p3,ncol=2)
+
+```
+  
+  
+Gender-
+Women have a higher proportion of readmission than men.  
+  
+Race-
+Asians have the lowest proportion of readmission among differeng races. The caucasian and African American population have a higher proportion of readmission
+  
+Age- 
+People over the age of 40 have a higher proportion of readmission.  It is also noticeable that older people have a higher probability of getting readmitted especially people aged between 60-90.
+  
+\pagebreak
+  
+#### Analysys of readmitted with Admission type
+
+```{r analysis-admission-type,echo=FALSE,warning=FALSE,message=FALSE}
+a_adm_type<-proportion_analysis('admission_type_id')
+plot_proportion_analysis(a_adm_type)+ggtitle("Admission Type")
+```
+  
+  
+  
+There does appear to be a relationship between admission type and readmission with category 3 showing showing lower readmission while category.(6 and 8 are null and not mapped.)
+\pagebreak
+
+#### Analysis of readmitted with discharge Disposition 
+
+```{r analysis-discharge-disposition, echo=FALSE,warning=FALSE,message=FALSE}
+a_discharge_disp<-proportion_analysis('discharge_disposition_id')
+plot_proportion_analysis(a_discharge_disp)+ggtitle("Discharge Disposition")
+
+```
+  
+  
+  
+Discharge disposition definitely seems to have a relationship with readmitted. As can be noticed categories 13 and 14 have a low redmittance rate whereas category 22 has a high redmittance rate within 30 days.
+  
+  
+\pagebreak
+
+#### Analysis of readmitted with admission source
+
+```{r analysis-admission-source,echo=FALSE,warning=FALSE,message=FALSE}
+a_adm_source<- proportion_analysis('admission_source_id')
+plot_proportion_analysis(a_adm_source)+ggtitle("Admission Source")
+```
+  
+  
+There is a relationship between admission source and readmitted. Category 3 has a high chance of getting admitted within 30 days. Category 7 has a high chance of getting readmitted after 30 days.
+  
+  
+\pagebreak
+
+#### analysis of readmitted and time spent in hospital
+```{r analysis-time-hospital,echo=FALSE,warning=FALSE,message=FALSE}
+diabetes%>%
+  ggplot(aes(x=readmitted,y=time_in_hospital))+
+  geom_boxplot()+
+  ggtitle("Time Spent in Hospital")
+```
+  
+  
+There is a relationship between time in hospital and readmitted as the median time spent in hospital for those who were readmitted is higher.
+  
+  
+\pagebreak
+  
+  
+#### analysis of readmitted with number of lab procedures,number of procedures,number of medications, number of outpatient, number of emergency and number of inpatient
+
+```{r analysis-numerical,echo=FALSE,warning=FALSE,message=FALSE}
+diabetes%>%
+  select(readmitted,
+         num_lab_procedures,
+         num_procedures,
+         num_medications,
+         number_outpatient,
+         number_emergency,
+         number_inpatient)%>%
+  gather(key,value,num_lab_procedures:number_inpatient)%>%
+  ggplot(aes(readmitted,value))+
+  geom_boxplot()+
+  scale_y_continuous(trans = 'log2')+
+  facet_wrap(~key,ncol=3)+
+  ggtitle("Procedures, Medications,Outpatient, Emergency, Inpatient")
+```
+
+There does not seem to be a clear relationship between between these numerical predictors and redmission except a small reduction in median when not readmitted in the case of num_lab_procedures. number emergency and number_inpatient have differnce in interquartile distance for those readmitted and for those that are not.
+
+  
+  
+\pagebreak
+  
+  
+#### analysis of readmitted with category_diag_1, category_diag_2 and category_diag_3
+
+
+```{r analysis-diagnosis,echo=FALSE,warning=FALSE,message=FALSE}
+
+diabetes%>%
+  select(category_diag_1,category_diag_2,category_diag_3,readmitted)%>%
+  gather(diagnosis_category,diagnosis,-readmitted)%>%
+  group_by(diagnosis_category,diagnosis)%>%
+  summarise(single_visit=mean(readmitted=='NO'),
+            greater_30_visits=mean(readmitted=='>30'),
+            lesser_30_visits=mean(readmitted=='<30'))%>%
+  gather(visit,value,single_visit:lesser_30_visits)%>%
+  ggplot(aes(x=visit,y=value,color=diagnosis))+
+  geom_jitter()+
+  scale_x_discrete(label=abbreviate)+
+  facet_wrap(~diagnosis_category,ncol =3)+
+  ggtitle("Diagnosis")
+
+```
+
+There appears to be a relation between diagnosis and readmission.Some categories like "630-679"  have low readmission rate whereas "280-289","460-519" and "680-709" have high readmission rate.
+  
+  
+\pagebreak
+  
+  
+## analysis of readmitted with number of diagnosis
+
+```{r analysis-number-diagnosis,echo=FALSE,warning=FALSE,message=FALSE}
+
+diabetes%>% 
+  ggplot(aes(x=readmitted,y=number_diagnoses))+
+  geom_boxplot()
+  ggtitle("Number of Diagnosis")
+```
+  
+The number of diagnosis does not seem to have a significant impact on the readmission rate except a larger interquartile range for those not readmitted.
+
+\pagebreak
+  
+  
+## analysis of readmitted with A1Cresult
+
+```{r analysis-a1cresult,echo=FALSE,warning=FALSE,message=FALSE}
+a_a1c_result<-proportion_analysis('A1Cresult')
+plot_proportion_analysis(a_a1c_result)+
+  ggtitle("A1C Result")
+```
+  
+
+A1Cresult is related to readmission with a lower readmission rate for those with a normal report.
+  
+   
+\pagebreak
+  
+
+## tests with metformin,glipizide,glyburide,pioglitazone,rosiglitazone & insulin
+
+
+```{r analysis-medication,echo=FALSE,warning=FALSE,message=FALSE}
+diabetes%>%
+  select(metformin,glipizide,glyburide,pioglitazone,rosiglitazone,insulin,readmitted)%>%
+  gather(test,result,-readmitted)%>%
+  group_by(test,result)%>%
+  summarise(single_visit=mean(readmitted=='NO'),
+            greater_30_visits=mean(readmitted=='>30'),
+            lesser_30_visits=mean(readmitted=='<30'))%>%
+  gather(visit,value,single_visit:lesser_30_visits)%>%
+  ggplot(aes(x=visit,y=value,color=result))+
+  geom_jitter()+
+  scale_x_discrete(label=abbreviate)+
+  facet_wrap(~test,ncol =3)+
+  ggtitle("metformin,glipizide,glyburide,pioglitazone,\n rosiglitazone & insulin")
+```
+
+  
+There appears to be a relation between the change in medications and readmission though not significant. There is also a differnt result for each medication.
+
+\pagebreak
+  
+  
+
+#### analysis of readmitted with change
+
+```{r analysis-change,echo=FALSE,warning=FALSE,message=FALSE}
+a_change<-proportion_analysis('change')
+plot_proportion_analysis(a_change)+
+  ggtitle("Change")
+```
+  
+  
+Patients with a change in medications have a higher chance of readmission than otherwise.
+\pagebreak
+  
+  
+#### analysis of readmitted with diabetes medicine
+  
+  
+```{r analysis-diabMed,echo=FALSE,warning=FALSE,message=FALSE}
+a_diabetes_med<- proportion_analysis('diabetesMed')
+plot_proportion_analysis(a_diabetes_med)+
+  ggtitle("Diabetes Medicine")
+```
+  
+  
+Patients who are on diabetic medicine have a higher chance of readmissin than otherwise.
+  
+  
+\pagebreak
+
+# Modeling
+
+#### split data to train and test
+
+```{r modelling-split-data,echo=FALSE,warning=FALSE,message=FALSE}
+set.seed(1, sample.kind="Rounding")
+#### if using R 3.5 or earlier, use `set.seed(1)` instead
+test_index<- createDataPartition(diabetes$readmitted,times=1,p=0.3,list=FALSE)
+test_set <- diabetes[test_index,]
+train_set<- diabetes[-test_index,]
+```
+
+The data is split into train and test set. The test set comprises of 30% of the diabetes data and will be used to test the model performance. The train set will be used to train the data. The train set has been kept large so that the model has more data to train on.
+
+#### Linear Discriminant Analysis (LDA)
+
+```{r modelling-lda,echo=FALSE,warning=FALSE,message=FALSE}
+##Linear Discriminant Analysis
+set.seed(1, sample.kind="Rounding")
+#### if using R 3.5 or earlier, use `set.seed(1)` instead
+fit_lda<-train_set%>%
+  train(readmitted ~ . - 
+          encounter_id -
+          patient_nbr - 
+          num_procedures -
+          num_medications -
+          number_outpatient -
+          number_diagnoses,
+        method='lda',
+        data=.)
+predictions_lda<-predict(fit_lda,newdata = test_set,type = 'raw')
+confusionMatrix(predictions_lda,reference = test_set$readmitted)
+
+```
+
+The accuracy is 60% . The notable feature is that the sensitivity is low for both "<30" and ">30" classes. This can be attributed to the low prevalence in these classes especially in "<30" class. 
+
+
+#### Quadratic Discriminant Analysis (QDA)
+
+```{r modelling-qda,echo=FALSE,warning=FALSE,message=FALSE}
+set.seed(1, sample.kind="Rounding")
+#### if using R 3.5 or earlier, use `set.seed(1)` instead
+fit_qda<-train_set%>%train(readmitted ~ . - 
+                             encounter_id -
+                             patient_nbr - 
+                             num_procedures -
+                             num_medications -
+                             number_outpatient -
+                             number_diagnoses,
+                           method='qda',
+                           data=.)
+predictions_qda<-predict(fit_qda,newdata = test_set,type = 'raw')
+confusionMatrix(predictions_qda,reference = test_set$readmitted)
+```
+
+The accuracy is 39.3%.However the sensitivity for classes "<30" and ">30" have gone up. This is significant due to the fact that predicting whether a patient will get readmitted is more important.
+  
+#### K nearest neighbors (KNN)
+```{r modelling-knn,echo=FALSE,warning=FALSE,message=FALSE}
+set.seed(1, sample.kind="Rounding")
+#### if using R 3.5 or earlier, use `set.seed(1)` instead
+control_knn<-trainControl(method = 'cv',number = 10,p=0.9)
+fit_knn<-train_set%>%train(readmitted ~ . - 
+                             encounter_id -
+                             patient_nbr - 
+                             num_procedures -
+                             num_medications -
+                             number_outpatient -
+                             number_diagnoses,
+                           method='knn',
+                           trControl=control_knn,
+                           tuneGrid=data.frame(k=seq(100,120,4)),
+                           data=.)
+predictions_rf<-predict(fit_rf,newdata = test_set,type = 'raw')
+confusionMatrix(predictions_rf,reference = test_set$readmitted)
+```
+
+The prediction of KNN model is . KNN does not have any predictive power in this case as it has very low or nearly zero sensitivity for classes"<30" and ">30".
+(Note- The KNN model takes a long time to run.)
+
+
+#### Result.
+We choose the Quadratic Discriminant Analysis(QDA) as the best model for predictions due to its higher sensitivity for crucial classes.
+```{r result,echo=FALSE,warning=FALSE,message=FALSE}
+set.seed(1, sample.kind="Rounding")
+#### if using R 3.5 or earlier, use `set.seed(1)` instead
+fit_qda<-diabetes%>%train(readmitted ~ . - 
+                             encounter_id -
+                             patient_nbr - 
+                             num_procedures -
+                             num_medications -
+                             number_outpatient -
+                             number_diagnoses,
+                           method='qda',
+                           data=.)
+predictions_qda<-predict(fit_qda,newdata = validation,type = 'raw')
+confusionMatrix(predictions_qda,reference = validation$readmitted)
+```
+

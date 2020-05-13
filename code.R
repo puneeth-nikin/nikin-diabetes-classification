@@ -2,6 +2,8 @@
 if(!require(tidyverse)) install.packages("tidyverse", repos = "http://cran.us.r-project.org")
 if(!require(caret)) install.packages("caret", repos = "http://cran.us.r-project.org")
 if(!require(rvest)) install.packages("rvest", repos = "http://cran.us.r-project.org")
+if(!require(gridExtra)) install.packages("gridExtra", repos = "http://cran.us.r-project.org")
+library(gridExtra)
 library(rvest)
 library(tidyverse)
 library(caret)
@@ -11,8 +13,16 @@ dl <- tempfile()
 download.file("https://archive.ics.uci.edu/ml/machine-learning-databases/00296/dataset_diabetes.zip",dl)
 unzip(dl)
 rm(dl)
+##Diabetic Data
 diabetic_data<- read_csv('dataset_diabetes/diabetic_data.csv')
 
+##description of sone features
+dataset_description<-read_csv('dataset_diabetes/IDs_mapping.csv')
+admission_type_description<-dataset_description[1:8,]
+discharge_disposition_description<-dataset_description[11:40,]
+names(discharge_disposition_description)<-c('discharge_disposition_id','decription')
+admission_source_description<-dataset_description[43:67,]
+names(admission_source_description)<-c('admission_source_id','description')
 
 #Summary of the dataset
 
@@ -39,6 +49,9 @@ diabetic_data<-
   diabetic_data[!duplicated(diabetic_data$patient_nbr),]
 
 ## checking for predictors with nzv and zero variance
+nearZeroVar(diabetic_data,saveMetrics = TRUE)%>%
+  as_tibble(rownames = "feature")%>%
+  filter(zeroVar==TRUE | nzv == TRUE)
 near_zero_variance <- nearZeroVar(diabetic_data)
 diabetic_data<-diabetic_data[,-near_zero_variance]
 
@@ -56,7 +69,7 @@ tab<-tab%>%
   filter(Chapter<18)
 regex_codes<-"^(\\d{3})-(\\d{3})$"
 
-###diag_1
+### classifying diag_1 to ICD9 codes
 temp_diabetic_data<-
   diabetic_data%>%
   filter(str_detect(diag_1,"^[VE\\?]")==FALSE)%>%
@@ -82,7 +95,7 @@ diabetic_data$category_diag_1[str_detect(diabetic_data$diag_1,"^E")]<-"E000-E999
 diabetic_data$category_diag_1[str_detect(diabetic_data$diag_1,"^\\?")]<-"?"
 diabetic_data$category_diag_1[str_detect(diabetic_data$diag_1,"^250")]<-"250"
 
-###diag_2
+###classifying diag_2 to ICD9 codes
 temp_diabetic_data<-diabetic_data%>%
   filter(str_detect(diag_2,"^[VE\\?]")==FALSE)%>%
   mutate(diag_2=as.numeric(diag_2))
@@ -104,7 +117,7 @@ diabetic_data$category_diag_2[str_detect(diabetic_data$diag_2,"^E")]<-"E000-E999
 diabetic_data$category_diag_2[str_detect(diabetic_data$diag_2,"^\\?")]<-"?"
 diabetic_data$category_diag_2[str_detect(diabetic_data$diag_2,"^250")]<-"250"
 
-###diag_3
+###classifying diag_3 to ICD9 codes
 temp_diabetic_data<-diabetic_data%>%
   filter(str_detect(diag_3,"^[VE\\?]")==FALSE)%>%
   mutate(diag_3=as.numeric(diag_3))
@@ -145,7 +158,7 @@ diabetic_data%>%group_by(age)%>%summarise(n=n())%>%arrange(n)
 diabetic_data$age[diabetic_data$age %in% c("[0-10)","[10-20)")]<-"[0-20)"
 ###admission_type_id
 diabetic_data%>%group_by(admission_type_id)%>%summarise(n=n())%>%arrange(n)
-diabetic_data$admission_type_id[diabetic_data$admission_type_id %in% c(4,7,8,6)]<-6
+diabetic_data$admission_type_id[diabetic_data$admission_type_id %in% c(4,7,8)]<-8
 
 ###discharge_disposition_id and removing expired(11)
 diabetic_data%>%group_by(discharge_disposition_id)%>%summarise(n=n())%>%arrange(n)
@@ -154,7 +167,7 @@ diabetic_data<-diabetic_data%>%filter(discharge_disposition_id != 11)
 
 ###admission_source_id
 diabetic_data%>%group_by(admission_source_id)%>%summarise(n=n())%>%arrange(n)
-diabetic_data$admission_source_id[diabetic_data$admission_source_id %in% c(11,13,14,25,22,10,8,9,15)]<-9
+diabetic_data<-diabetic_data%>%filter(!admission_source_id %in% c(11,13,14,25,10,22,8))
 
 ###category_diag_1
 diabetic_data%>%group_by(category_diag_1)%>%summarise(n=n())%>%arrange(n)
@@ -195,7 +208,7 @@ diabetic_data%>%group_by(change)%>%summarise(n=n())%>%arrange(n)
 ###diabetesMed
 diabetic_data%>%group_by(diabetesMed)%>%summarise(n=n())%>%arrange(n)
 
-##Scaling the numeric predictors
+##Centering and Scaling the numeric predictors
 
 diabetic_data<- diabetic_data%>%
   mutate(
@@ -230,9 +243,6 @@ diabetic_data<-diabetic_data%>%
          diabetesMed=as.factor(diabetesMed),
          readmitted=as.factor(readmitted))
 
-## check for NA
-na_check<-apply(diabetic_data, 2, function(x) any(is.na(x)))
-table(na_check)
 
 # Split data for validation, 10% of diabetic_data
 set.seed(1, sample.kind="Rounding")
@@ -287,9 +297,8 @@ plot_proportion_analysis(a_adm_source)+ggtitle("Admission Source")
 
 ##analysis of readmitted and time spent in hospital
 diabetes%>%
-  ggplot(aes(x=time_in_hospital))+
-  geom_histogram()+
-  facet_wrap(~readmitted,ncol = 1)+
+  ggplot(aes(x=readmitted,y=time_in_hospital))+
+  geom_boxplot()+
   ggtitle("Time Spent in Hospital")
 
 ## analysis of readmitted with number of lab procedures,number of procedures,
@@ -303,23 +312,33 @@ diabetes%>%
          number_emergency,
          number_inpatient)%>%
   gather(key,value,num_lab_procedures:number_inpatient)%>%
-  ggplot(aes(value))+
-  geom_histogram()+
+  ggplot(aes(readmitted,value))+
+  geom_boxplot()+
   scale_y_continuous(trans = 'log2')+
-  facet_wrap(key~readmitted,ncol=3)+
+  facet_wrap(~key,ncol=3)+
   ggtitle("Procedures, Medications,Outpatient, Emergency, Inpatient")
 
-##analysis of readmitted with category_diag_1
-a_diag<-proportion_analysis("category_diag_1")
-plot_proportion_analysis(a_diag)+
-  ggtitle("Category Diagnosis")
+##analysis of readmitted with category_diag_1, category_diag_2 and category_diag_3
+diabetes%>%
+  select(metformin,glipizide,glyburide,pioglitazone,rosiglitazone,insulin,readmitted)%>%
+  gather(test,result,-readmitted)%>%
+  group_by(test,result)%>%
+  summarise(single_visit=mean(readmitted=='NO'),
+            greater_30_visits=mean(readmitted=='>30'),
+            lesser_30_visits=mean(readmitted=='<30'))%>%
+  gather(visit,value,single_visit:lesser_30_visits)%>%
+  ggplot(aes(x=visit,y=value,color=result))+
+  geom_jitter()+
+  scale_x_discrete(label=abbreviate)+
+  facet_wrap(~test,ncol =3)+
+  ggtitle("metformin,glipizide,glyburide,pioglitazone,\n rosiglitazone & insulin")
+
 
 ## analysis of readmitted with number of diagnosis
 diabetes%>% 
-  ggplot(aes(x=number_diagnoses))+
-  geom_histogram()+
-  facet_wrap(~readmitted,ncol = 1)+
-  ggtitle("Number of Diagnosis")
+  ggplot(aes(x=readmitted,y=number_diagnoses))+
+  geom_boxplot()
+ggtitle("Number of Diagnosis")
 
 
 
@@ -359,30 +378,72 @@ plot_proportion_analysis(a_diabetes_med)+
 # Modeling
 
 ## split data to train and test
-
+set.seed(1, sample.kind="Rounding")
+#### if using R 3.5 or earlier, use `set.seed(1)` instead
 test_index<- createDataPartition(diabetes$readmitted,times=1,p=0.3,list=FALSE)
 test_set <- diabetes[test_index,]
 train_set<- diabetes[-test_index,]
 
 ##Linear Discriminant Analysis
-fit_lda<-train_set%>%train(readmitted ~ . -encounter_id -patient_nbr,
+set.seed(1, sample.kind="Rounding")
+#### if using R 3.5 or earlier, use `set.seed(1)` instead
+fit_lda<-train_set%>%
+  train(readmitted ~ . - 
+          encounter_id -
+          patient_nbr - 
+          num_procedures -
+          num_medications -
+          number_outpatient -
+          number_diagnoses,
         method='lda',
         data=.)
 predictions_lda<-predict(fit_lda,newdata = test_set,type = 'raw')
-confusion_matrix_lda<-confusionMatrix(predictions_lda,reference = test_set$readmitted)
+confusionMatrix(predictions_lda,reference = test_set$readmitted)
 
 ##Quadratic Discriminant Analysis
-fit_qda<-train_set%>%train(readmitted ~ . -encounter_id -patient_nbr,
+set.seed(1, sample.kind="Rounding")
+#### if using R 3.5 or earlier, use `set.seed(1)` instead
+fit_qda<-train_set%>%train(readmitted ~ . - 
+                             encounter_id -
+                             patient_nbr - 
+                             num_procedures -
+                             num_medications -
+                             number_outpatient -
+                             number_diagnoses,
                            method='qda',
                            data=.)
 predictions_qda<-predict(fit_qda,newdata = test_set,type = 'raw')
 confusion_matrix_qda<-confusionMatrix(predictions_qda,reference = test_set$readmitted)
 
-##Random Forest
-fit_rf<-train_set%>%train(readmitted ~ . -encounter_id -patient_nbr,
-                           method='Rborist',
+##KNN
+set.seed(1, sample.kind="Rounding")
+#### if using R 3.5 or earlier, use `set.seed(1)` instead
+control_knn<-trainControl(method = 'cv',number = 10,p=0.9)
+fit_knn<-train_set%>%train(readmitted ~ . - 
+                             encounter_id -
+                             patient_nbr - 
+                             num_procedures -
+                             num_medications -
+                             number_outpatient -
+                             number_diagnoses,
+                           method='knn',
+                           trControl=control_knn,
+                           tuneGrid=data.frame(k=seq(100,120,4)),
                            data=.)
 predictions_rf<-predict(fit_rf,newdata = test_set,type = 'raw')
 confusion_matrix_rf<-confusionMatrix(predictions_rf,reference = test_set$readmitted)
 
-
+# Result 
+set.seed(1, sample.kind="Rounding")
+#### if using R 3.5 or earlier, use `set.seed(1)` instead
+fit_qda<-diabetes%>%train(readmitted ~ . - 
+                            encounter_id -
+                            patient_nbr - 
+                            num_procedures -
+                            num_medications -
+                            number_outpatient -
+                            number_diagnoses,
+                          method='qda',
+                          data=.)
+predictions_qda<-predict(fit_qda,newdata = validation,type = 'raw')
+confusionMatrix(predictions_qda,reference = validation$readmitted)
