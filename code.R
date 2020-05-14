@@ -337,7 +337,7 @@ diabetes%>%
 ## analysis of readmitted with number of diagnosis
 diabetes%>% 
   ggplot(aes(x=readmitted,y=number_diagnoses))+
-  geom_boxplot()
+  geom_boxplot()+
 ggtitle("Number of Diagnosis")
 
 
@@ -413,12 +413,12 @@ fit_qda<-train_set%>%train(readmitted ~ . -
                            method='qda',
                            data=.)
 predictions_qda<-predict(fit_qda,newdata = test_set,type = 'raw')
-confusion_matrix_qda<-confusionMatrix(predictions_qda,reference = test_set$readmitted)
+confusionMatrix(predictions_qda,reference = test_set$readmitted)
 
 ##KNN
 set.seed(1, sample.kind="Rounding")
 #### if using R 3.5 or earlier, use `set.seed(1)` instead
-control_knn<-trainControl(method = 'cv',number = 10,p=0.9)
+control_knn<-trainControl(method = 'cv',number = 5,p=0.9)
 fit_knn<-train_set%>%train(readmitted ~ . - 
                              encounter_id -
                              patient_nbr - 
@@ -430,8 +430,8 @@ fit_knn<-train_set%>%train(readmitted ~ . -
                            trControl=control_knn,
                            tuneGrid=data.frame(k=seq(100,120,4)),
                            data=.)
-predictions_rf<-predict(fit_rf,newdata = test_set,type = 'raw')
-confusion_matrix_rf<-confusionMatrix(predictions_rf,reference = test_set$readmitted)
+predictions_knn<-predict(fit_knn,newdata = test_set,type = 'raw')
+confusionMatrix(predictions_knn,reference = test_set$readmitted)
 
 # Result 
 set.seed(1, sample.kind="Rounding")

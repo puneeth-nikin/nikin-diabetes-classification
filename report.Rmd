@@ -11,7 +11,7 @@ knitr::opts_chunk$set(echo = TRUE)
 
 # Introduction
 
-Diabetes is a metabolic disease that leads to high blood sugar in Patients. As of 2017 425 million people suffered from this disease. Hospital Readmission is a mojor concern among patients whose diabetes is poorly controlled. This leads to higher hospital bills among these patients as well as higher morbidity and mortality rates.Consequently identifying patients with high probability of readmittance will help hospitals to curate their treatment accordingly.
+Diabetes is a metabolic disease that leads to high blood sugar in Patients. As of 2017 425 million people suffered from this disease. Hospital Readmission is a major concern among patients whose diabetes is poorly controlled. This leads to higher hospital bills among these patients as well as higher morbidity and mortality rates.Consequently identifying patients with high probability of readmittance will help hospitals to curate their treatment accordingly.
 
 In this study, analysis of data from 130 Hospitals accross the US for 10 years (1999-2008) is conducted. Based on this data a model will be developed to predict whether a patient will be readmitted within 30 days, after 30 days or never. This is a classification problem. Three models will  be built, namely Linear Discriminant Analysis Quadratic Discriminant Analysis and K Nearest Neighbors(KNN) and the best performing model among them will be identified. 
 
@@ -139,7 +139,8 @@ tab <- tab %>% html_table
 icd_9table<-tab
 icd_9table%>%
   knitr::kable(caption = "ICD9  Codes")%>%
-  kable_styling(latex_options = "scale_down")
+  kable_styling(latex_options = "scale_down")%>%
+  kable_styling(latex_options = "hold_position")
 save(icd_9table,file='dataset_diabetes/icd_9.Rda')
 # if web scraping fails due to internet, server or any such problems remove the web scraping lines and uncomment following lines
 #icd_9table<-load('dataset_diabetes/icd_9.Rda')
@@ -199,7 +200,7 @@ Values-
 
 1) Cleaning and Preprocessing the dataset - This step involves identifying missing values, converting characters to factors where approprite, scaling and centering numerical features,grouping or removing levels in features that contain sparse data and identifying features with zero variablilty or near zero variability.  
   
-2) Split the Dataset- We split the dataset into two. One set is used for validation in the end and is assumed to be unseen. n 
+2) Split the Dataset- We split the dataset into two. One set is used for validation in the end and is assumed to be unseen. The remaining data is used to build the model.
   
 3) Analysing the features- Identify relationship between features and predicted value.  
   
@@ -227,7 +228,7 @@ diabetic_data<-diabetic_data%>%select(-weight,-medical_specialty,-payer_code)
 We notice that the feature weigh has 96.8% of its data missing, medical_speciality has 49% of data missing and payer_code has 39% of data missing. We drop these columns/features. 
 
 #### repetition of patient encounters
-For some patientxs there are multiple records and this can potentially be confusing. Therefore we only keep one record per patient.
+For some patientxs there are multiple records. We only keep one record per patient.
 
 ```{r cleaning-patuent repetition,echo=FALSE, message=FALSE, warning=FALSE}
 # repetition of patients removing multiple encounters
@@ -685,7 +686,7 @@ There appears to be a relation between diagnosis and readmission.Some categories
 
 diabetes%>% 
   ggplot(aes(x=readmitted,y=number_diagnoses))+
-  geom_boxplot()
+  geom_boxplot()+
   ggtitle("Number of Diagnosis")
 ```
   
@@ -825,7 +826,7 @@ The accuracy is 39.3%.However the sensitivity for classes "<30" and ">30" have g
 ```{r modelling-knn,echo=FALSE,warning=FALSE,message=FALSE}
 set.seed(1, sample.kind="Rounding")
 #### if using R 3.5 or earlier, use `set.seed(1)` instead
-control_knn<-trainControl(method = 'cv',number = 10,p=0.9)
+control_knn<-trainControl(method = 'cv',number = 5,p=0.9)
 fit_knn<-train_set%>%train(readmitted ~ . - 
                              encounter_id -
                              patient_nbr - 
@@ -837,11 +838,12 @@ fit_knn<-train_set%>%train(readmitted ~ . -
                            trControl=control_knn,
                            tuneGrid=data.frame(k=seq(100,120,4)),
                            data=.)
-predictions_rf<-predict(fit_rf,newdata = test_set,type = 'raw')
-confusionMatrix(predictions_rf,reference = test_set$readmitted)
+predictions_knn<-predict(fit_knn,newdata = test_set,type = 'raw')
+confusionMatrix(predictions_knn,reference = test_set$readmitted)
 ```
 
-The prediction of KNN model is . KNN does not have any predictive power in this case as it has very low or nearly zero sensitivity for classes"<30" and ">30".
+5 fold cross validation is performed to reduce run time. The tuning parameter was tested over larger number of 'k' starting from 5, however the accuracy kept rising. Here a small set is shown for representation.
+KNN does not have any predictive power in this case as it has very low or nearly zero sensitivity for classes"<30" and ">30".
 (Note- The KNN model takes a long time to run.)
 
 
@@ -862,7 +864,9 @@ fit_qda<-diabetes%>%train(readmitted ~ . -
 predictions_qda<-predict(fit_qda,newdata = validation,type = 'raw')
 confusionMatrix(predictions_qda,reference = validation$readmitted)
 ```
-
+  
+  
+The overall accuracy is 40%. The model has High sensitiviy towards class ">30" which is 0.71. The sensitivity towards class "<30" is 0.22 owing to its low prevalence. However higher than the other two models.This is owed to the fact that QDA has a quadratic decision boundary.
   
   
 #### Conclusion
