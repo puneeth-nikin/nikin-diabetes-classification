@@ -11,7 +11,7 @@ knitr::opts_chunk$set(echo = TRUE)
 
 # Introduction
 
-Diabetes is a metabolic disease that leads to high blood sugar in Patients. As of 2017 425 million people suffered from this disease. Hospital Readmission is a mojor concern among patients whose diabetes is poorly controlled. This leads to higher hospital bills among these patients as well as higher morbidity and mortality.Consequently identifying patients with high probability of readmittance will help hospitals to curate their treatment accordingly.
+Diabetes is a metabolic disease that leads to high blood sugar in Patients. As of 2017 425 million people suffered from this disease. Hospital Readmission is a mojor concern among patients whose diabetes is poorly controlled. This leads to higher hospital bills among these patients as well as higher morbidity and mortality rates.Consequently identifying patients with high probability of readmittance will help hospitals to curate their treatment accordingly.
 
 In this study, analysis of data from 130 Hospitals accross the US for 10 years (1999-2008) is conducted. Based on this data a model will be developed to predict whether a patient will be readmitted within 30 days, after 30 days or never. This is a classification problem. Three models will  be built, namely Linear Discriminant Analysis Quadratic Discriminant Analysis and K Nearest Neighbors(KNN) and the best performing model among them will be identified. 
 
@@ -37,7 +37,7 @@ download.file(
   dl)
 unzip(dl)
 rm(dl)
-
+# if download fails due to internet, server or any such problems remove the download lines and continue as data already stored in diabetes_data folder
 # diabetic data
 diabetic_data<- read_csv('dataset_diabetes/diabetic_data.csv')
 
@@ -99,11 +99,11 @@ admission_source_description%>%
 
 #### Time  in Hospital
 
-time_in_hospital refers to the number of  days from admission to discharge.
+time_in_hospital - refers to the number of  days from admission to discharge.
 
 #### Payer Code
 
-payer_code corresponds to mode of payment e.g self pay, blue cross,medicare etc. 
+payer_code - corresponds to mode of payment e.g self pay, blue cross,medicare etc. 
 
 #### Medical Speciliality
 medical_speciality - The type of physician who is admitting the patient
@@ -140,7 +140,10 @@ icd_9table<-tab
 icd_9table%>%
   knitr::kable(caption = "ICD9  Codes")%>%
   kable_styling(latex_options = "scale_down")
-
+save(icd_9table,file='dataset_diabetes/icd_9.Rda')
+# if web scraping fails due to internet, server or any such problems remove the web scraping lines and uncomment following lines
+#icd_9table<-load('dataset_diabetes/icd_9.Rda')
+#tab<-icd_9table
 ```
 
 #### Glucose Serum Test
@@ -153,7 +156,7 @@ values-
 
 #### A1Cresult
 
-A1Cresult - a1c test result reflects average blood sugar levels over 3 months. also refered to as hemoglobin A1C test.   
+A1Cresult - a1c test result reflects average blood sugar levels over 3 months, also refered to as hemoglobin A1C test.   
 Values - 
 ">8" -  greater than 8%   
 ">7" - greater than 7% less than 8%   
@@ -162,7 +165,7 @@ Values -
 
 #### Medications
 
-24 features represent type of medications and values denote change in levels during encounter.   
+24 features represent type of medications. Values denote change in levels during encounter.   
 
 features- metformin, repaglinide, nateglinide, chlorpropamide, glimepiride, acetohexamide, glipizide, glyburide, tolbutamide, pioglitazone, rosiglitazone, acarbose, miglitol, troglitazone, tolazamide, examide, sitagliptin, insulin, glyburide-metformin, glipizide-metformin, glimepiride-pioglitazone, metformin-rosiglitazone, and metformin-pioglitazone   
 
@@ -248,7 +251,7 @@ diabetic_data<-diabetic_data[,-near_zero_variance]
 
 #### classifying diagnosis by ICD9 codes
 
-One other significant problem is some features like diag_1, diag_2 and diag_3 have way to many levels when converted to factors and this involves costly computation. To avoid this we reduce number of levels by classifying to ICD9 classifications. We also seperate codes pertaining to 250.xx as they are specifically related to diabetes.
+One other significant problem is some features like diag_1, diag_2 and diag_3 have too many levels when converted to factors and this involves costly computation while fitting models. To avoid this we reduce number of levels by classifying to ICD9 classifications. We also seperate codes pertaining to 250.xx as they are specifically related to diabetes.
 
 ```{r cleaning-diagnosis,echo=FALSE, message=FALSE, warning=FALSE}
 
@@ -387,7 +390,7 @@ diabetic_data%>%group_by(admission_type_id)%>%
 diabetic_data$admission_type_id[diabetic_data$admission_type_id %in% c(4,7,8)]<-8
 ```
   
-The levels 4,7 and 8 are sparse and therefore merged with level 6.  
+The levels 4,7 and 8 are sparse and therefore merged with level 8.  
   
 
 Discharge Disposition ID -  
@@ -418,7 +421,11 @@ diabetic_data%>%
   kable_styling(latex_options = 'hold_position')
 diabetic_data<-diabetic_data%>%filter(!admission_source_id %in% c(11,13,14,25,10,22,8))
 ```
-
+  
+  
+Sparse data in admission source for levels11,13,14,25,10,22 and 8. Removing these levels.
+  
+  
 \pagebreak
   
 Diagnosis Categories- 
@@ -449,7 +456,7 @@ knitr::kable(
   kable_styling(latex_options = 'hold_position')
 ```
   
-For category_diag_1 we notice that "E000-E999","?" and "740-759" are sparse. we remove them. We perform a similar exercise on category_diag_2 and category_diag_3. 
+For category_diag_1 we notice that "E000-E999","?" and "740-759" are sparse. we remove them. We perform a similar exercise on category_diag_2 and category_diag_3 but instead of removing we group it with "?". 
   
 #### Centering and Scaling the Numerical Predictors
 
@@ -586,7 +593,7 @@ plot_proportion_analysis(a_discharge_disp)+ggtitle("Discharge Disposition")
   
   
   
-Discharge disposition definitely seems to have a relationship with readmitted. As can be noticed categories 13 and 14 have a low redmittance rate whereas category 22 has a high redmittance rate within 30 days.
+Discharge disposition definitely seems to have a relationship with readmitted. As can be noticed categories 13 and 14 have a low readmittance rate whereas category 22 has a high readmittance rate within 30 days.
   
   
 \pagebreak
@@ -638,7 +645,7 @@ diabetes%>%
   ggtitle("Procedures, Medications,Outpatient, Emergency, Inpatient")
 ```
 
-There does not seem to be a clear relationship between between these numerical predictors and redmission except a small reduction in median when not readmitted in the case of num_lab_procedures. number emergency and number_inpatient have differnce in interquartile distance for those readmitted and for those that are not.
+There does not seem to be a clear relationship between between tsome numerical predictors and readmission.In the case of num_lab_procedures a small reduction in median when not readmitted is noticed. number_emergency and number_inpatient have difference in interquartile distance for those readmitted and for those that are not.
 
   
   
@@ -722,7 +729,7 @@ diabetes%>%
 ```
 
   
-There appears to be a relation between the change in medications and readmission though not significant. There is also a differnt result for each medication.
+There appears to be a relation between the change in medications and readmission though not significant. There is also a different result for each medication.
 
 \pagebreak
   
@@ -751,7 +758,7 @@ plot_proportion_analysis(a_diabetes_med)+
 ```
   
   
-Patients who are on diabetic medicine have a higher chance of readmissin than otherwise.
+Patients who are on diabetic medicine have a higher chance of readmission than otherwise.
   
   
 \pagebreak
@@ -856,7 +863,9 @@ predictions_qda<-predict(fit_qda,newdata = validation,type = 'raw')
 confusionMatrix(predictions_qda,reference = validation$readmitted)
 ```
 
+  
+  
 #### Conclusion
-In conclusion, it is apparent that with real world data it is crucial to clean and preprocess the dataset prior to fitting the model. It is also clear that it is important to identify only those features which have predictive power before fitting the model else the computation can be expensive and at the same time not doing so can affect the results as well.
-Among the models KNN has the highest accuracy. However this is misleading as predicting every patient is not going to be readmitted alone will give us such a high accuracy,without fitting a model.This can be attributed to the fact that class "NO", which corresponds to not readmitted, has high prevalence. Therefore we will use sensitivity as a metric to identify the best performing model. In the case of LDA and QDA, QDA has a higher sensitivity to  classes "<30" and ">30", which in this case are the important classes. This could be the case as LDA assumes that the observations have a normal distribution and have a common covariance matrix for each class. Also QDA has a quadratic decision boundary. Therefore QDA was used to fit the final model.
+In conclusion, it is apparent that with real world data it is crucial to clean and pre-process the dataset prior to fitting the model. It is also clear that it is important to identify only those features which have predictive power before fitting the model else the computation can be expensive and at the same time not doing so can affect the results as well.
+Among the models KNN has the highest accuracy. However this is misleading as predicting every patient as not going to be readmitted alone will give us such a high accuracy,without fitting a model.This can be attributed to the fact that class "NO", which corresponds to not readmitted, has high prevalence. Therefore we will use sensitivity as a metric to identify the best performing model. In the case of LDA and QDA, QDA has a higher sensitivity to  classes "<30" and ">30", which in this case are the important classes. This could be the case as LDA assumes that the observations have a normal distribution and have a common covariance matrix for each class. Also QDA has a quadratic decision boundary. Therefore QDA was used to fit the final model.
 Future work involves improving sensitivity towards the crucial classes.
